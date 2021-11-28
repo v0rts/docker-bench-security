@@ -57,10 +57,12 @@ docker run --rm --net host --pid host --userns host --cap-add audit_control \
     docker/docker-bench-security
 ```
 
-2. `Docker Desktop` on macOS doesn't have `/usr/lib/systemd` or the above Docker
+2. The /etc/hostname file is missing on macOS, so it will need to be created first. Also, `Docker Desktop` on macOS doesn't have `/usr/lib/systemd` or the above Docker
     binaries.
 
 ```sh
+sudo touch /etc/hostname
+
 docker run --rm --net host --pid host --userns host --cap-add audit_control \
     -e DOCKER_CONTENT_TRUST=$DOCKER_CONTENT_TRUST \
     -v /etc:/etc \
@@ -92,8 +94,8 @@ Note that when distributions don't contain `auditctl`, the audit tests will chec
 ```
 
 By default the Docker Bench for Security script will run all available CIS tests and produce
-logs in the log folder from current directory, named `docker-bench-security.sh.log.json` and
-`docker-bench-security.sh.log`.
+logs in the log folder from current directory, named `docker-bench-security.log.json` and
+`docker-bench-security.log`.
 
 If the docker container is used then the log files will be created inside the container in location `/usr/local/bin/log/`. If you wish to access them from the host after the container has been run you will need to mount a volume for storing them in.
 
@@ -106,6 +108,8 @@ The CIS based checks are named `check_<section>_<number>`, e.g. `check_2_6` and 
 `sh docker-bench-security.sh -e docker_enterprise_configuration` will run all available checks except the docker_enterprise_configuration group
 
 `sh docker-bench-security.sh -e docker_enterprise_configuration,check_2_2` will run allavailable checks except the docker_enterprise_configuration group and `2.2 Ensure the logging level is set to 'info'`
+
+`sh docker-bench-security.sh -c container_images,container_runtime` will run just the container_images and container_runtime checks
 
 `sh docker-bench-security.sh -c container_images -e check_4_5` will run just the container_images checks except `4.5 Ensure Content trust for Docker is Enabled`
 

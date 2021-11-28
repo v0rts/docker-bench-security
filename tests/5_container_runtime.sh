@@ -345,8 +345,34 @@ check_5_8() {
   local check="$id - $desc"
   starttestjson "$id" "$desc"
 
-  note -c "$check"
-  logcheckresult "NOTE"
+  fail=0
+  open_port_containers=""
+  for c in $containers; do
+    ports=$(docker port "$c" | awk '{print $0}' | cut -d ':' -f2)
+
+    for port in $ports; do
+      if [ -n "$port" ]; then
+        # If it's the first container, fail the test
+        if [ $fail -eq 0 ]; then
+          warn -s "$check"
+          warn "     * Port in use: $port in $c"
+          open_port_containers="$open_port_containers $c:$port"
+          fail=1
+          continue
+        fi
+        warn "     * Port in use: $port in $c"
+        open_port_containers="$open_port_containers $c:$port"
+      fi
+    done
+  done
+
+  # We went through all the containers and found none with open ports
+  if [ $fail -eq 0 ]; then
+    pass -s "$check"
+    logcheckresult "PASS"
+    return
+  fi
+  logcheckresult "WARN" "Containers with open ports" "$open_port_containers"
 }
 
 check_5_9() {
@@ -828,7 +854,7 @@ check_5_21() {
   fi
 
   local id="5.21"
-  local desc="Ensurethe default seccomp profile is not Disabled (Automated)"
+  local desc="Ensure the default seccomp profile is not Disabled (Automated)"
   local remediation="By default, seccomp profiles are enabled. You do not need to do anything unless you want to modify and use a modified seccomp profile."
   local remediationImpact="With Docker 1.10 and greater, the default seccomp profile blocks syscalls, regardless of -- cap-add passed to the container."
   local check="$id - $desc"
