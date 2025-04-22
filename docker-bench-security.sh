@@ -2,16 +2,18 @@
 # --------------------------------------------------------------------------------------------
 # Docker Bench for Security
 #
-# Docker, Inc. (c) 2015-2021
+# Docker, Inc. (c) 2015-2022
 #
 # Checks for dozens of common best-practices around deploying Docker containers in production.
 # --------------------------------------------------------------------------------------------
 
-version='1.3.6'
+version='1.6.0'
+
+LIBEXEC="." # Distributions can change this to /usr/libexec or similar.
 
 # Load dependencies
-. ./functions/functions_lib.sh
-. ./functions/helper_lib.sh
+. $LIBEXEC/functions/functions_lib.sh
+. $LIBEXEC/functions/helper_lib.sh
 
 # Setup the paths
 this_path=$(abspath "$0")       ## Path of this file including filename
@@ -24,7 +26,7 @@ readonly myname
 export PATH="$PATH:/bin:/sbin:/usr/bin:/usr/local/bin:/usr/sbin/"
 
 # Check for required program(s)
-req_programs 'awk docker grep stat tee tail wc xargs truncate sed'
+req_programs 'awk docker grep sed stat tail tee tr wc xargs'
 
 # Ensure we can connect to docker daemon
 if ! docker ps -q >/dev/null 2>&1; then
@@ -36,7 +38,7 @@ usage () {
   cat <<EOF
 Docker Bench for Security - Docker, Inc. (c) 2015-$(date +"%Y")
 Checks for dozens of common best-practices around deploying Docker containers in production.
-Based on the CIS Docker Benchmark 1.3.1.
+Based on the CIS Docker Benchmark 1.6.0.
 
 Usage: ${myname}.sh [OPTIONS]
 
@@ -57,6 +59,7 @@ Options:
   -e CHECK     optional  Comma delimited list of specific check(s) id to exclude
   -i INCLUDE   optional  Comma delimited list of patterns within a container or image name to check
   -x EXCLUDE   optional  Comma delimited list of patterns within a container or image name to exclude from check
+  -t LABEL     optional  Comma delimited list of labels within a container or image to check
   -n LIMIT     optional  In JSON output, when reporting lists of items (containers, images, etc.), limit the number of reported items to LIMIT. Default 0 (no limit).
   -p PRINT     optional  Print remediation measures. Default: Don't print remediation measures.
 
@@ -90,6 +93,7 @@ do
   e) checkexclude="$OPTARG" ;;
   i) include="$OPTARG" ;;
   x) exclude="$OPTARG" ;;
+  t) labels="$OPTARG" ;;
   n) limit="$OPTARG" ;;
   p) printremediation="1" ;;
   *) usage; exit 1 ;;
@@ -97,7 +101,7 @@ do
 done
 
 # Load output formating
-. ./functions/output_lib.sh
+. $LIBEXEC/functions/output_lib.sh
 
 yell_info
 
@@ -141,21 +145,26 @@ main () {
     fi
   done
 
+  # Format LABELS
+  for label in $(echo "$labels" | sed 's/,/ /g'); do
+    LABELS="$LABELS --filter label=$label"
+  done
+
   if [ -n "$include" ]; then
     pattern=$(echo "$include" | sed 's/,/|/g')
-    containers=$(docker ps | sed '1d' | awk '{print $NF}' | grep -v "$benchcont" | grep -E "$pattern")
-    images=$(docker images | sed '1d' | grep -E "$pattern" | awk '{print $3}' | grep -v "$benchimagecont")
+    containers=$(docker ps $LABELS| sed '1d' | awk '{print $NF}' | grep -v "$benchcont" | grep -E "$pattern")
+    images=$(docker images $LABELS| sed '1d' | grep -E "$pattern" | awk '{print $3}' | grep -v "$benchimagecont")
   elif [ -n "$exclude" ]; then
     pattern=$(echo "$exclude" | sed 's/,/|/g')
-    containers=$(docker ps | sed '1d' | awk '{print $NF}' | grep -v "$benchcont" | grep -Ev "$pattern")
-    images=$(docker images | sed '1d' | grep -Ev "$pattern" | awk '{print $3}' | grep -v "$benchimagecont")
+    containers=$(docker ps $LABELS| sed '1d' | awk '{print $NF}' | grep -v "$benchcont" | grep -Ev "$pattern")
+    images=$(docker images $LABELS| sed '1d' | grep -Ev "$pattern" | awk '{print $3}' | grep -v "$benchimagecont")
   else
-    containers=$(docker ps | sed '1d' | awk '{print $NF}' | grep -v "$benchcont")
-    images=$(docker images -q | grep -v "$benchcont")
+    containers=$(docker ps $LABELS| sed '1d' | awk '{print $NF}' | grep -v "$benchcont")
+    images=$(docker images -q $LABELS| grep -v "$benchcont")
   fi
 
-  for test in tests/*.sh; do
-    . ./"$test"
+  for test in $LIBEXEC/tests/*.sh; do
+    . "$test"
   done
 
   if [ -z "$check" ] && [ ! "$checkexclude" ]; then
@@ -163,7 +172,7 @@ main () {
     cis
   elif [ -z "$check" ]; then
     # No check defined but excludes defined set to calls in cis() function
-    check=$(sed -ne "/cis() {/,/}/{/{/d; /}/d; p}" functions/functions_lib.sh)
+    check=$(sed -ne "/cis() {/,/}/{/{/d; /}/d; p;}" functions/functions_lib.sh)
   fi
 
   for c in $(echo "$check" | sed "s/,/ /g"); do
@@ -183,7 +192,7 @@ main () {
         continue
       elif echo "$c" | grep -vE 'check_[0-9]|check_[a-z]' 2>/dev/null 1>&2; then
         # Function not a check, fill loop_checks with all check from function
-        loop_checks="$(sed -ne "/$c() {/,/}/{/{/d; /}/d; p}" functions/functions_lib.sh)"
+        loop_checks="$(sed -ne "/$c() {/,/}/{/{/d; /}/d; p;}" functions/functions_lib.sh)"
       else
         # Just one check
         loop_checks="$c"
